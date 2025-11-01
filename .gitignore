@@ -45,6 +45,14 @@ docker-compose.override.yml
 *.tmp
 *.bak
 
+# テスト結果・検証ドキュメント（開発用、GitHubには不要）
+TEST_RESULTS.md
+INTEGRATION_TEST_RESULTS.md
+README_VERIFICATION.md
+VERIFICATION_RESULT.md
+FIXES_APPLIED.md
+PUBLIC_RELEASE_CHECK.md
+
 # 注意: valve_angle_system/.gitignore は valve_angle_system ディレクトリ内のみを対象とします
 # プロジェクトルートでGitリポジトリを管理する場合は、プロジェクトルートの.gitignoreを使用してください
 
