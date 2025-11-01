@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:14
+    container_name: valve_angle_postgres
+    environment:
+      POSTGRES_DB: valve_angle_db
+      POSTGRES_USER: valve_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-valve_password}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U valve_user -d valve_angle_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - valve_network
+
+  fastapi-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: valve_angle_server
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./server:/app
+      - ./certs:/app/certs
+    environment:
+      DATABASE_URL: postgresql://valve_user:${POSTGRES_PASSWORD:-valve_password}@postgres:5432/valve_angle_db
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-valve_password}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - valve_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  valve_network:
+    driver: bridge
+

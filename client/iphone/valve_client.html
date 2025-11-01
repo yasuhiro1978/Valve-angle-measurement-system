@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>バルブ角度計測 - iPhone Client</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            padding: 15px;
+            max-width: 100%;
+        }
+        
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            background: rgba(255,255,255,0.95);
+            margin-bottom: 15px;
+        }
+        
+        /* 大きなボタン（80px以上） */
+        .btn-large {
+            width: 100%;
+            min-height: 80px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 15px;
+            margin-bottom: 10px;
+            border: none;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-large:active {
+            transform: scale(0.95);
+        }
+        
+        .btn-calibration {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+        }
+        
+        .btn-measure {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            color: white;
+        }
+        
+        .btn-save {
+            background: linear-gradient(45deg, #764ba2, #667eea);
+            color: white;
+        }
+        
+        .btn-next {
+            background: linear-gradient(45deg, #ffc107, #fd7e14);
+            color: white;
+        }
+        
+        /* カメラプレビューエリア */
+        .camera-preview {
+            position: relative;
+            width: 100%;
+            height: 300px;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+        
+        .camera-preview video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .camera-preview canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        /* ROI矩形 */
+        .roi-rectangle {
+            position: absolute;
+            border: 3px solid #28a745;
+            background: rgba(40, 167, 69, 0.1);
+            cursor: move;
+            pointer-events: auto;
+        }
+        
+        .roi-handle {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #28a745;
+            border: 2px solid white;
+            border-radius: 50%;
+            cursor: nwse-resize;
+        }
+        
+        /* 対象タイプタブ */
+        .target-type-tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+        
+        .target-type-tabs .btn {
+            flex: 1;
+            padding: 10px;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+        
+        .target-type-tabs .btn.active {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+        }
+        
+        /* ステータス表示 */
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-connected {
+            background-color: #28a745;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-disconnected {
+            background-color: #dc3545;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* ログ表示 */
+        .log-container {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        .log-message {
+            margin-bottom: 3px;
+            padding: 2px 0;
+        }
+        
+        .log-info { color: #007bff; }
+        .log-success { color: #28a745; }
+        .log-warning { color: #ffc107; }
+        .log-error { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- ヘッダー -->
+        <div class="card">
+            <div class="card-body text-center">
+                <h4><i class="fas fa-radar me-2"></i>バルブ角度計測</h4>
+                <div class="d-flex align-items-center justify-content-center">
+                    <span class="status-indicator status-disconnected" id="connectionStatus"></span>
+                    <span id="connectionText">未接続</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- カメラプレビュー + ROI選択 -->
+        <div class="card">
+            <div class="card-body">
+                <h6 class="mb-3">カメラプレビュー</h6>
+                <div class="camera-preview" id="cameraPreview">
+                    <video id="cameraVideo" autoplay playsinline></video>
+                    <canvas id="pointCloudCanvas"></canvas>
+                    <div class="roi-rectangle" id="roiRectangle" style="display: none;">
+                        <div class="roi-handle" style="top: -6px; left: -6px;"></div>
+                        <div class="roi-handle" style="top: -6px; right: -6px;"></div>
+                        <div class="roi-handle" style="bottom: -6px; left: -6px;"></div>
+                        <div class="roi-handle" style="bottom: -6px; right: -6px;"></div>
+                    </div>
+                </div>
+                <small class="text-muted">📍 画面をタップしてROIを選択</small>
+            </div>
+        </div>
+        
+        <!-- 対象タイプ選択 -->
+        <div class="card">
+            <div class="card-body">
+                <h6 class="mb-3">対象タイプ</h6>
+                <div class="target-type-tabs">
+                    <button class="btn btn-outline-primary active" data-type="A" onclick="selectTargetType('A')">
+                        A<br><small>ステム軸</small>
+                    </button>
+                    <button class="btn btn-outline-primary" data-type="B" onclick="selectTargetType('B')">
+                        B<br><small>ハンドル面</small>
+                    </button>
+                    <button class="btn btn-outline-primary" data-type="C" onclick="selectTargetType('C')">
+                        C<br><small>フランジ面</small>
+                    </button>
+                    <button class="btn btn-outline-primary" data-type="D" onclick="selectTargetType('D')">
+                        D<br><small>配管軸</small>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 基準方式選択 -->
+        <div class="card">
+            <div class="card-body">
+                <h6 class="mb-3">基準方式</h6>
+                <div class="btn-group w-100" role="group">
+                    <input type="radio" class="btn-check" name="basis" id="basisImu" value="imu" checked>
+                    <label class="btn btn-outline-primary" for="basisImu">IMU ⭐</label>
+                    
+                    <input type="radio" class="btn-check" name="basis" id="basisPlane" value="plane">
+                    <label class="btn btn-outline-primary" for="basisPlane">平面推定</label>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主要ボタン -->
+        <div class="card">
+            <div class="card-body">
+                <button class="btn btn-large btn-calibration" onclick="startCalibration()">
+                    <i class="fas fa-ruler-combined me-2"></i>📐 基準合わせ
+                </button>
+                
+                <button class="btn btn-large btn-measure" onclick="startMeasurement()">
+                    <i class="fas fa-ruler me-2"></i>📏 計測
+                </button>
+                
+                <button class="btn btn-large btn-save" onclick="saveMeasurement()" disabled id="saveBtn">
+                    <i class="fas fa-save me-2"></i>💾 保存
+                </button>
+                
+                <button class="btn btn-large btn-next" onclick="nextMeasurement()">
+                    <i class="fas fa-arrow-right me-2"></i>➡️ 次の測定
+                </button>
+            </div>
+        </div>
+        
+        <!-- 統計情報 -->
+        <div class="card">
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <div class="mb-2">
+                            <small class="text-muted">点群</small>
+                            <div id="pointCount">0点</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="mb-2">
+                            <small class="text-muted">距離</small>
+                            <div id="distance">- m</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ログ表示 -->
+        <div class="card">
+            <div class="card-body">
+                <h6><i class="fas fa-terminal me-2"></i>ログ</h6>
+                <div class="log-container" id="logContainer">
+                    <div class="log-message log-info">アプリケーション起動中...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // グローバル変数
+        // ============================================================
+        let websocket = null;
+        let cameraStream = null;
+        let arSession = null;
+        let isCalibrated = false;
+        let isMeasuring = false;
+        let currentTargetType = 'A';
+        let currentBasis = 'imu';
+        let roiData = null;
+        let imuData = {
+            gravity: { x: 0, y: 0, z: -9.8 },
+            attitude: { pitch: 0, roll: 0, yaw: 0 }
+        };
+        let currentMeasurement = null;
+        
+        // ============================================================
+        // 初期化
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', function() {
+            logMessage('アプリケーション初期化中...', 'info');
+            
+            // 初回起動チェック（外部基準合わせ）
+            const hasCalibrated = localStorage.getItem('hasCalibrated');
+            if (!hasCalibrated) {
+                showCalibrationModal();
+            }
+            
+            // カメラプレビュー初期化
+            initCameraPreview();
+            
+            // IMUデータ取得開始
+            startIMUMonitoring();
+            
+            // サーバー接続（自動）
+            // PCのIPアドレスを自動検出または手動設定
+            const urlParams = new URLSearchParams(window.location.search);
+            const pcIpFromUrl = urlParams.get('pcIp');
+            const pcIpFromStorage = localStorage.getItem('pcIp');
+            // デフォルトは現在のPCのIPアドレス（環境に応じて変更してください）
+            // 別のPCを使用する場合は、URLパラメータまたはlocalStorageで設定可能
+            const pcIp = pcIpFromUrl || pcIpFromStorage || 'YOUR_PC_IP_ADDRESS';
+            connectToServer(pcIp);
+            
+            // ROI選択イベント
+            setupROISelection();
+        });
+        
+        // ============================================================
+        // 外部基準合わせモーダル
+        // ============================================================
+        function showCalibrationModal() {
+            const modal = document.createElement('div');
+            modal.className = 'modal fade show';
+            modal.style.display = 'block';
+            modal.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">初回セットアップ - 基準合わせ</h5>
+                        </div>
+                        <div class="modal-body">
+                            <p>水平器を使って、iPhoneを水平に配置してください。</p>
+                            <ol>
+                                <li>iPhoneを壁または三脚に固定</li>
+                                <li>水平器をiPhoneの画面に合わせる</li>
+                                <li>水平になったら「基準設定」ボタンを押す</li>
+                            </ol>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" onclick="skipCalibration()">スキップ</button>
+                            <button type="button" class="btn btn-primary" onclick="completeCalibration()">✅ 基準設定完了</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            window.completeCalibration = function() {
+                isCalibrated = true;
+                localStorage.setItem('hasCalibrated', 'true');
+                document.body.removeChild(modal);
+                logMessage('✅ 外部基準合わせ完了', 'success');
+            };
+            
+            window.skipCalibration = function() {
+                localStorage.setItem('hasCalibrated', 'skipped');
+                document.body.removeChild(modal);
+                logMessage('⚠️ 外部基準合わせをスキップしました（端末内キャリブのみ使用）', 'warning');
+            };
+        }
+        
+        // ============================================================
+        // サーバー接続
+        // ============================================================
+        function connectToServer(pcIp) {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${pcIp}:3000/ws/lidar`;
+            
+            logMessage(`サーバー接続中: ${wsUrl}`, 'info');
+            updateConnectionStatus('connecting', '接続中...');
+            
+            try {
+                websocket = new WebSocket(wsUrl);
+                
+                websocket.onopen = function(event) {
+                    logMessage('✅ サーバー接続成功', 'success');
+                    updateConnectionStatus('connected', '接続済み');
+                };
+                
+                websocket.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        handleServerMessage(data);
+                    } catch (error) {
+                        logMessage(`メッセージ解析エラー: ${error.message}`, 'error');
+                    }
+                };
+                
+                websocket.onclose = function(event) {
+                    logMessage('❌ サーバー接続が切断されました', 'error');
+                    updateConnectionStatus('disconnected', '切断');
+                };
+                
+                websocket.onerror = function(error) {
+                    logMessage(`❌ 接続エラー: ${error.message || 'Unknown error'}`, 'error');
+                    updateConnectionStatus('disconnected', 'エラー');
+                };
+                
+            } catch (error) {
+                logMessage(`❌ WebSocket作成エラー: ${error.message}`, 'error');
+                updateConnectionStatus('disconnected', 'エラー');
+            }
+        }
+        
+        // ============================================================
+        // サーバーメッセージ処理
+        // ============================================================
+        function handleServerMessage(data) {
+            switch (data.type) {
+                case 'connection':
+                    logMessage(`サーバー: ${data.message}`, 'info');
+                    break;
+                case 'angle_result':
+                    currentMeasurement = data;
+                    displayAngleResult(data);
+                    document.getElementById('saveBtn').disabled = false;
+                    logMessage(`✅ 角度計算完了: ピッチ=${data.pitch}°, ロール=${data.roll}°`, 'success');
+                    break;
+                case 'save_response':
+                    logMessage(`✅ 計測結果を保存しました (ID: ${data.measurement_id})`, 'success');
+                    document.getElementById('saveBtn').disabled = true;
+                    break;
+                case 'error':
+                    logMessage(`❌ エラー: ${data.message}`, 'error');
+                    break;
+                default:
+                    logMessage(`未知のメッセージタイプ: ${data.type}`, 'warning');
+            }
+        }
+        
+        // ============================================================
+        // カメラプレビュー初期化
+        // ============================================================
+        async function initCameraPreview() {
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('カメラAPIが利用できません。HTTPS接続が必要です。');
+                }
+                
+                const video = document.getElementById('cameraVideo');
+                
+                // 背面カメラを優先的に取得
+                const constraints = {
+                    video: {
+                        facingMode: { ideal: 'environment' },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                };
+                
+                cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = cameraStream;
+                
+                logMessage('✅ カメラ起動成功', 'success');
+                
+                // ARKit/WebXR初期化（LiDAR対応チェック）
+                initARKit();
+                
+            } catch (error) {
+                logMessage(`❌ カメラ起動エラー: ${error.message}`, 'error');
+            }
+        }
+        
+        // ============================================================
+        // ARKit/WebXR初期化
+        // ============================================================
+        async function initARKit() {
+            try {
+                // WebXR APIを試行（iOS SafariでARモードが利用可能な場合）
+                if (navigator.xr) {
+                    const supported = await navigator.xr.isSessionSupported('immersive-ar');
+                    if (supported) {
+                        logMessage('✅ WebXR ARモードが利用可能です', 'success');
+                        await initWebXR();
+                        return;
+                    }
+                }
+                
+                // フォールバック: 既存のARKitパターン（既存コード互換性のため保持）
+                if (typeof ARKit !== 'undefined') {
+                    if (!ARKit.ARWorldTrackingConfiguration.isSupported) {
+                        logMessage('⚠️ ARWorldTrackingConfigurationがサポートされていません', 'warning');
+                        useSimulationMode();
+                        return;
+                    }
+                    
+                    if (!ARKit.ARWorldTrackingConfiguration.supportsSceneReconstruction) {
+                        logMessage('⚠️ シーン再構築がサポートされていません。LiDARが必要です。', 'warning');
+                        useSimulationMode();
+                        return;
+                    }
+                    
+                    arSession = new ARKit.ARSession();
+                    const configuration = new ARKit.ARWorldTrackingConfiguration();
+                    configuration.sceneReconstruction = ARKit.ARWorldTrackingConfiguration.SceneReconstruction.mesh;
+                    arSession.run(configuration);
+                    
+                    logMessage('✅ ARKitセッション開始（LiDAR有効）', 'success');
+                } else {
+                    logMessage('⚠️ ARKit APIが利用できません。シミュレーションモードを使用します。', 'warning');
+                    useSimulationMode();
+                }
+                
+            } catch (error) {
+                logMessage(`❌ AR初期化エラー: ${error.message}`, 'error');
+                useSimulationMode();
+            }
+        }
+        
+        // ============================================================
+        // WebXR初期化
+        // ============================================================
+        async function initWebXR() {
+            try {
+                // WebXRセッション作成（将来実装）
+                logMessage('📝 WebXR実装は将来拡張予定です', 'info');
+                useSimulationMode();
+            } catch (error) {
+                logMessage(`❌ WebXR初期化エラー: ${error.message}`, 'error');
+                useSimulationMode();
+            }
+        }
+        
+        // ============================================================
+        // シミュレーションモード（開発・テスト用）
+        // ============================================================
+        function useSimulationMode() {
+            logMessage('⚠️ シミュレーションモードで動作します（実デバイスではLiDARデータを取得します）', 'warning');
+            // シミュレーションフラグを設定
+            window.simulationMode = true;
+        }
+        
+        // ============================================================
+        // IMUデータ取得
+        // ============================================================
+        function startIMUMonitoring() {
+            if (typeof DeviceMotionEvent !== 'undefined' && DeviceMotionEvent.requestPermission) {
+                // iOS 13+ の場合、許可が必要
+                DeviceMotionEvent.requestPermission().then(response => {
+                    if (response === 'granted') {
+                        startDeviceMotion();
+                    } else {
+                        logMessage('⚠️ デバイスモーションの許可が拒否されました', 'warning');
+                    }
+                });
+            } else {
+                startDeviceMotion();
+            }
+        }
+        
+        function startDeviceMotion() {
+            window.addEventListener('devicemotion', function(event) {
+                if (event.accelerationIncludingGravity) {
+                    const acc = event.accelerationIncludingGravity;
+                    imuData.gravity = {
+                        x: acc.x || 0,
+                        y: acc.y || 0,
+                        z: acc.z || -9.8
+                    };
+                }
+                
+                if (event.rotationRate) {
+                    const rot = event.rotationRate;
+                    imuData.attitude = {
+                        pitch: rot.beta || 0,
+                        roll: rot.gamma || 0,
+                        yaw: rot.alpha || 0
+                    };
+                }
+            });
+            
+            logMessage('✅ IMUモニタリング開始', 'success');
+        }
+        
+        // ============================================================
+        // ROI選択機能
+        // ============================================================
+        function setupROISelection() {
+            const preview = document.getElementById('cameraPreview');
+            const roiRect = document.getElementById('roiRectangle');
+            
+            // タップでROI選択
+            preview.addEventListener('click', function(event) {
+                if (isMeasuring) {
+                    logMessage('⚠️ 計測中はROIを変更できません', 'warning');
+                    return;
+                }
+                
+                const rect = preview.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                
+                // ROI中心を設定
+                createAutoROI(x, y, rect.width, rect.height);
+            });
+            
+            // ROI手動調整（ドラッグ）
+            let isDragging = false;
+            let dragOffset = { x: 0, y: 0 };
+            
+            roiRect.addEventListener('mousedown', function(e) {
+                if (e.target.classList.contains('roi-handle')) {
+                    // リサイズハンドル
+                    isDragging = true;
+                    // TODO: リサイズ処理
+                } else {
+                    // 移動
+                    isDragging = true;
+                    const rect = roiRect.getBoundingClientRect();
+                    dragOffset.x = e.clientX - rect.left;
+                    dragOffset.y = e.clientY - rect.top;
+                }
+            });
+            
+            preview.addEventListener('mousemove', function(e) {
+                if (isDragging && !isMeasuring) {
+                    const previewRect = preview.getBoundingClientRect();
+                    const newX = e.clientX - previewRect.left - dragOffset.x;
+                    const newY = e.clientY - previewRect.top - dragOffset.y;
+                    
+                    roiRect.style.left = Math.max(0, Math.min(newX, previewRect.width - parseFloat(roiRect.style.width))) + 'px';
+                    roiRect.style.top = Math.max(0, Math.min(newY, previewRect.height - parseFloat(roiRect.style.height))) + 'px';
+                    
+                    updateROIData();
+                }
+            });
+            
+            preview.addEventListener('mouseup', function() {
+                isDragging = false;
+            });
+            
+            // タッチイベント（モバイル対応）
+            roiRect.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const rect = roiRect.getBoundingClientRect();
+                dragOffset.x = touch.clientX - rect.left;
+                dragOffset.y = touch.clientY - rect.top;
+                isDragging = true;
+            });
+            
+            preview.addEventListener('touchmove', function(e) {
+                if (isDragging && !isMeasuring) {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const previewRect = preview.getBoundingClientRect();
+                    const newX = touch.clientX - previewRect.left - dragOffset.x;
+                    const newY = touch.clientY - previewRect.top - dragOffset.y;
+                    
+                    roiRect.style.left = Math.max(0, Math.min(newX, previewRect.width - parseFloat(roiRect.style.width))) + 'px';
+                    roiRect.style.top = Math.max(0, Math.min(newY, previewRect.height - parseFloat(roiRect.style.height))) + 'px';
+                    
+                    updateROIData();
+                }
+            });
+            
+            preview.addEventListener('touchend', function() {
+                isDragging = false;
+            });
+        }
+        
+        function createAutoROI(centerX, centerY, canvasWidth, canvasHeight) {
+            const roiRect = document.getElementById('roiRectangle');
+            
+            // 自動ROIサイズ計算（画面の30%程度、最小100px）
+            const roiWidth = Math.max(100, canvasWidth * 0.3);
+            const roiHeight = Math.max(100, canvasHeight * 0.3);
+            
+            const left = Math.max(0, centerX - roiWidth / 2);
+            const top = Math.max(0, centerY - roiHeight / 2);
+            const right = Math.min(canvasWidth, centerX + roiWidth / 2);
+            const bottom = Math.min(canvasHeight, centerY + roiHeight / 2);
+            
+            roiRect.style.left = left + 'px';
+            roiRect.style.top = top + 'px';
+            roiRect.style.width = (right - left) + 'px';
+            roiRect.style.height = (bottom - top) + 'px';
+            roiRect.style.display = 'block';
+            
+            updateROIData();
+            
+            logMessage(`📍 ROI選択完了 (中心: ${centerX.toFixed(0)}, ${centerY.toFixed(0)}, サイズ: ${(right-left).toFixed(0)}x${(bottom-top).toFixed(0)})`, 'success');
+        }
+        
+        function updateROIData() {
+            const roiRect = document.getElementById('roiRectangle');
+            const preview = document.getElementById('cameraPreview');
+            const previewRect = preview.getBoundingClientRect();
+            const roiRectBounds = roiRect.getBoundingClientRect();
+            
+            const centerX = (roiRectBounds.left + roiRectBounds.width / 2 - previewRect.left) / previewRect.width;
+            const centerY = (roiRectBounds.top + roiRectBounds.height / 2 - previewRect.top) / previewRect.height;
+            
+            roiData = {
+                center: { 
+                    x: centerX,
+                    y: centerY,
+                    z: 1.0  // 暫定値
+                },
+                size: { 
+                    width: roiRectBounds.width / previewRect.width,
+                    height: roiRectBounds.height / previewRect.height,
+                    depth: 0.2  // 暫定値（20cm）
+                }
+            };
+        }
+        
+        // ============================================================
+        // 対象タイプ選択
+        // ============================================================
+        function selectTargetType(type) {
+            currentTargetType = type;
+            
+            // タブの見た目を更新
+            document.querySelectorAll('.target-type-tabs .btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.target-type-tabs .btn[data-type="${type}"]`).classList.add('active');
+            
+            logMessage(`対象タイプを選択: ${type}`, 'info');
+        }
+        
+        // ============================================================
+        // 基準合わせ
+        // ============================================================
+        function startCalibration() {
+            logMessage('📐 基準合わせを開始します...', 'info');
+            
+            // 外部基準合わせモーダル表示
+            const modal = document.createElement('div');
+            modal.className = 'modal fade show';
+            modal.style.display = 'block';
+            modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+            modal.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">📐 基準合わせ</h5>
+                        </div>
+                        <div class="modal-body">
+                            <p>水平器を使って、iPhoneを水平に配置してください。</p>
+                            <ol>
+                                <li>iPhoneを壁または三脚に固定</li>
+                                <li>水平器をiPhoneの画面に合わせる</li>
+                                <li>水平になったら「基準設定完了」ボタンを押す</li>
+                            </ol>
+                            <div class="alert alert-info mt-3">
+                                <strong>現在のIMUデータ:</strong><br>
+                                ピッチ: <span id="calibrationPitch">0.0</span>°<br>
+                                ロール: <span id="calibrationRoll">0.0</span>°
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" onclick="closeCalibrationModal()">キャンセル</button>
+                            <button type="button" class="btn btn-primary" onclick="completeCalibration()">✅ 基準設定完了</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            // IMUデータをリアルタイム表示
+            const calibrationInterval = setInterval(() => {
+                const pitch = (imuData.attitude.pitch * 180 / Math.PI).toFixed(1);
+                const roll = (imuData.attitude.roll * 180 / Math.PI).toFixed(1);
+                const pitchEl = document.getElementById('calibrationPitch');
+                const rollEl = document.getElementById('calibrationRoll');
+                if (pitchEl) pitchEl.textContent = pitch;
+                if (rollEl) rollEl.textContent = roll;
+            }, 100);
+            
+            window.completeCalibration = function() {
+                clearInterval(calibrationInterval);
+                isCalibrated = true;
+                localStorage.setItem('hasCalibrated', 'true');
+                localStorage.setItem('calibrationTimestamp', new Date().toISOString());
+                localStorage.setItem('calibrationIMU', JSON.stringify(imuData));
+                document.body.removeChild(modal);
+                logMessage('✅ 外部基準合わせ完了', 'success');
+            };
+            
+            window.closeCalibrationModal = function() {
+                clearInterval(calibrationInterval);
+                document.body.removeChild(modal);
+            };
+        }
+        
+        // ============================================================
+        // 計測開始
+        // ============================================================
+        function startMeasurement() {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                logMessage('❌ サーバー接続が必要です', 'error');
+                return;
+            }
+            
+            if (!roiData) {
+                logMessage('❌ まずROIを選択してください', 'error');
+                return;
+            }
+            
+            logMessage('📏 計測を開始します...', 'info');
+            isMeasuring = true;
+            
+            // LiDAR点群データ取得・送信
+            captureAndSendLiDARData();
+        }
+        
+        // ============================================================
+        // LiDARデータ取得・送信
+        // ============================================================
+        function captureAndSendLiDARData() {
+            let sceneDepth = null;
+            let camera = null;
+            
+            // ARKitセッションからデータ取得を試行
+            if (arSession && arSession.currentFrame) {
+                try {
+                    const currentFrame = arSession.currentFrame;
+                    sceneDepth = currentFrame.sceneDepth;
+                    camera = currentFrame.camera;
+                } catch (error) {
+                    logMessage(`⚠️ ARKitフレーム取得エラー: ${error.message}`, 'warning');
+                }
+            }
+            
+            // 点群データ生成（ROI範囲内）
+            // sceneDepthがnullの場合はシミュレーションモードで生成
+            const points = generatePointCloudInROI(sceneDepth, camera);
+            
+            if (points.length === 0) {
+                logMessage('⚠️ 点群データが生成されませんでした', 'warning');
+                isMeasuring = false;
+                return;
+            }
+            
+            // 基準方式を取得
+            const basisRadio = document.querySelector('input[name="basis"]:checked');
+            currentBasis = basisRadio ? basisRadio.value : 'imu';
+            
+            // 距離計算（暫定：ROI中心のZ座標から推定）
+            const avgZ = points.reduce((sum, p) => sum + p[2], 0) / points.length;
+            const distance = avgZ.toFixed(2);
+            document.getElementById('distance').textContent = `${distance} m`;
+            
+            // サーバーに送信
+            const message = {
+                type: 'lidar_data',
+                points: points.map(p => ({
+                    x: p[0],
+                    y: p[1],
+                    z: p[2],
+                    confidence: 0.95
+                })),
+                roi: roiData,
+                imu: {
+                    gravity: imuData.gravity,
+                    attitude: imuData.attitude,
+                    timestamp: new Date().toISOString()
+                },
+                container_id: 'CNT-TEST',  // 暫定
+                target_type: currentTargetType,
+                basis: currentBasis,
+                timestamp: new Date().toISOString()
+            };
+            
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                logMessage('❌ サーバー接続が必要です', 'error');
+                isMeasuring = false;
+                return;
+            }
+            
+            websocket.send(JSON.stringify(message));
+            
+            // 統計更新
+            document.getElementById('pointCount').textContent = `${points.length}点`;
+            
+            logMessage(`📡 LiDARデータ送信: ${points.length}点`, 'info');
+            
+            isMeasuring = false;
+        }
+        
+        // ============================================================
+        // 点群データ生成（ROI範囲内）
+        // ============================================================
+        function generatePointCloudInROI(sceneDepth, camera) {
+            const points = [];
+            
+            // シミュレーションモードの場合
+            if (window.simulationMode) {
+                return generateSimulatedPointCloud();
+            }
+            
+            // 実際のLiDAR点群生成（既存コードパターンを参考）
+            try {
+                if (!sceneDepth || !camera) {
+                    logMessage('⚠️ シーン深度データまたはカメラデータがありません', 'warning');
+                    return generateSimulatedPointCloud();
+                }
+                
+                const depthData = sceneDepth.depthMap;
+                if (!depthData) {
+                    logMessage('⚠️ 深度マップが取得できません', 'warning');
+                    return generateSimulatedPointCloud();
+                }
+                
+                const width = depthData.width || 640;
+                const height = depthData.height || 480;
+                
+                // カメラパラメータ
+                const cameraIntrinsics = camera.intrinsics;
+                const fx = cameraIntrinsics?.[0]?.[0] || width * 0.8;
+                const fy = cameraIntrinsics?.[1]?.[1] || height * 0.8;
+                const cx = cameraIntrinsics?.[0]?.[2] || width / 2;
+                const cy = cameraIntrinsics?.[1]?.[2] || height / 2;
+                
+                // ROI範囲を考慮したサンプリング
+                const roiRect = document.getElementById('roiRectangle');
+                if (!roiRect || roiRect.style.display === 'none') {
+                    // ROI未選択の場合は全体からサンプリング
+                    return generateSimulatedPointCloud();
+                }
+                
+                const previewRect = document.getElementById('cameraPreview').getBoundingClientRect();
+                const roiRectBounds = roiRect.getBoundingClientRect();
+                
+                const roiX = roiRectBounds.left - previewRect.left;
+                const roiY = roiRectBounds.top - previewRect.top;
+                const roiW = roiRectBounds.width;
+                const roiH = roiRectBounds.height;
+                
+                // ROI範囲内の深度データを点群に変換（4ピクセル間隔でサンプリング）
+                const step = 4;
+                const startY = Math.max(0, Math.floor(roiY * height / previewRect.height));
+                const endY = Math.min(height, Math.floor((roiY + roiH) * height / previewRect.height));
+                const startX = Math.max(0, Math.floor(roiX * width / previewRect.width));
+                const endX = Math.min(width, Math.floor((roiX + roiW) * width / previewRect.width));
+                
+                for (let y = startY; y < endY; y += step) {
+                    for (let x = startX; x < endX; x += step) {
+                        const depth = getDepthValue(depthData, x, y);
+                        
+                        if (depth > 0 && depth < 5.0) { // 5メートル以内の点のみ
+                            // 3D座標に変換
+                            const z = depth;
+                            const x3d = (x - cx) * z / fx;
+                            const y3d = (y - cy) * z / fy;
+                            
+                            points.push([x3d, y3d, z]);
+                        }
+                    }
+                }
+                
+                // 点数が少ない場合は補間
+                if (points.length < 50) {
+                    logMessage('⚠️ 点群データが少ないため、シミュレーションデータを補完します', 'warning');
+                    const simulated = generateSimulatedPointCloud();
+                    points.push(...simulated.slice(0, 50 - points.length));
+                }
+                
+                return points;
+                
+            } catch (error) {
+                logMessage(`❌ 点群生成エラー: ${error.message}`, 'error');
+                return generateSimulatedPointCloud();
+            }
+        }
+        
+        // ============================================================
+        // 深度値取得
+        // ============================================================
+        function getDepthValue(depthData, x, y) {
+            // 実際の実装では、CVPixelBufferから深度値を取得
+            // 暫定実装（既存コードパターン）
+            try {
+                // depthDataから実際の深度値を取得する処理
+                // CVPixelBufferのアクセス方法は環境依存
+                return Math.random() * 2.0 + 0.5; // 0.5-2.5mの範囲
+            } catch (error) {
+                return Math.random() * 2.0 + 0.5;
+            }
+        }
+        
+        // ============================================================
+        // シミュレーション点群生成（開発・テスト用）
+        // ============================================================
+        function generateSimulatedPointCloud() {
+            const points = [];
+            const sampleCount = 500;  // 500点サンプリング
+            
+            // ROI範囲を考慮したシミュレーション
+            const roiRect = document.getElementById('roiRectangle');
+            let centerX = 0.0;
+            let centerY = 0.0;
+            let centerZ = 1.0;
+            let spreadX = 0.3;
+            let spreadY = 0.2;
+            let spreadZ = 0.3;
+            
+            if (roiRect && roiRect.style.display !== 'none') {
+                // ROIが選択されている場合、その範囲に合わせて生成
+                const previewRect = document.getElementById('cameraPreview').getBoundingClientRect();
+                const roiRectBounds = roiRect.getBoundingClientRect();
+                const roiCenterX = (roiRectBounds.left + roiRectBounds.width / 2 - previewRect.left) / previewRect.width;
+                const roiCenterY = (roiRectBounds.top + roiRectBounds.height / 2 - previewRect.top) / previewRect.height;
+                
+                centerX = (roiCenterX - 0.5) * 0.5;
+                centerY = (roiCenterY - 0.5) * 0.3;
+                spreadX = roiRectBounds.width / previewRect.width * 0.5;
+                spreadY = roiRectBounds.height / previewRect.height * 0.3;
+            }
+            
+            for (let i = 0; i < sampleCount; i++) {
+                points.push([
+                    centerX + (Math.random() - 0.5) * spreadX,
+                    centerY + (Math.random() - 0.5) * spreadY,
+                    centerZ + (Math.random() - 0.5) * spreadZ
+                ]);
+            }
+            
+            return points;
+        }
+        
+        // ============================================================
+        // 角度結果表示
+        // ============================================================
+        function displayAngleResult(data) {
+            // TODO: 角度結果をUIに表示（Sprint 2詳細実装）
+            logMessage(`角度結果: ピッチ=${data.pitch}°, ロール=${data.roll}°`, 'success');
+        }
+        
+        // ============================================================
+        // 保存
+        // ============================================================
+        function saveMeasurement() {
+            if (!currentMeasurement) {
+                logMessage('❌ 保存する計測結果がありません', 'error');
+                return;
+            }
+            
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                logMessage('❌ サーバー接続が必要です', 'error');
+                return;
+            }
+            
+            const message = {
+                type: 'save_measurement',
+                measurement_id: currentMeasurement.measurement_id,
+                container_id: 'CNT-TEST',
+                container_number: 'CNT-TEST',
+                processed_date: new Date().toISOString().split('T')[0],
+                operator: 'user'
+            };
+            
+            websocket.send(JSON.stringify(message));
+            logMessage('💾 保存リクエスト送信', 'info');
+        }
+        
+        // ============================================================
+        // 次の測定
+        // ============================================================
+        function nextMeasurement() {
+            // ROIをリセット
+            document.getElementById('roiRectangle').style.display = 'none';
+            roiData = null;
+            currentMeasurement = null;
+            document.getElementById('saveBtn').disabled = true;
+            
+            logMessage('➡️ 次の測定を準備しました', 'info');
+        }
+        
+        // ============================================================
+        // ユーティリティ関数
+        // ============================================================
+        function logMessage(message, type = 'info') {
+            const logContainer = document.getElementById('logContainer');
+            const logDiv = document.createElement('div');
+            logDiv.className = `log-message log-${type}`;
+            logDiv.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(logDiv);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+        
+        function updateConnectionStatus(status, text) {
+            const statusIndicator = document.getElementById('connectionStatus');
+            const statusText = document.getElementById('connectionText');
+            
+            statusIndicator.className = `status-indicator status-${status}`;
+            statusText.textContent = text;
+        }
+    </script>
+</body>
+</html>
+

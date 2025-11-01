@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+
+# 環境変数
+.env
+.env.local
+
+# SSL証明書（機密情報）
+certs/*.pem
+certs/*.key
+!certs/.gitkeep
+
+# データベース
+*.db
+*.sqlite
+
+# ログ
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# 一時ファイル
+*.tmp
+*.bak
+
+# 注意: valve_angle_system/.gitignore は valve_angle_system ディレクトリ内のみを対象とします
+# プロジェクトルートでGitリポジトリを管理する場合は、プロジェクトルートの.gitignoreを使用してください
+
